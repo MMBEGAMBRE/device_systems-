@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional
 from enum import Enum
 
@@ -8,16 +8,26 @@ class UserRole(str, Enum):
     user = "user"
 
 class UserBase(BaseModel):
-    name: str = Field(..., min_length=3, description="Nombre del usuario, mínimo 3 caracteres")
-    email: EmailStr = Field(..., description="Correo electrónico válido")
-    role: UserRole = Field(..., description="Rol del usuario: admin, support o user")
-    is_active: bool = Field(True, description="Estado de activación del usuario")
+    name: str = Field(..., min_length=3)
+    email: EmailStr
+    role: UserRole
+    is_active: bool = True
 
 class UserCreate(UserBase):
     pass
 
+class UserUpdate(UserBase):
+    """Esquema para actualización completa (PUT)"""
+    pass
+
+class UserPatch(BaseModel):
+    """Esquema para actualización parcial (PATCH)"""
+    name: Optional[str] = Field(None, min_length=3)
+    email: Optional[EmailStr] = None
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+
 class UserResponse(UserBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
