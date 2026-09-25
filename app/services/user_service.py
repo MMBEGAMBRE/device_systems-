@@ -1,35 +1,60 @@
-from typing import List, Optional
-from app.data import users_db
+from typing import Literal, Optional
 
-def list_users(role: Optional[str] = None, is_active: Optional[bool] = None) -> List[dict]:
-    filtered = users_db.users_db
-    if role:
-        filtered = [u for u in filtered if u["role"] == role]
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.models.user_model import User
+
+
+def list_users(
+    db: Session,
+    role: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    sort_by: Literal["name", "created_at"] = "name",
+) -> list[User]:
+    statement = select(User)
+    if role is not None:
+        statement = statement.where(User.role == role)
     if is_active is not None:
-        filtered = [u for u in filtered if u["is_active"] == is_active]
-    return filtered
+        statement = statement.where(User.is_active == is_active)
+    sort_column = User.name if sort_by == "name" else User.created_at
+    return list(db.scalars(statement.order_by(sort_column)).all())
 
-def find_user(user_id: int) -> Optional[dict]:
-    return next((u for u in users_db.users_db if u["id"] == user_id), None)
 
-def email_exists(email: str, exclude_id: Optional[int] = None) -> bool:
-    return any(u["email"] == email and u["id"] != exclude_id for u in users_db.users_db)
+def find_user(db: Session, user_id: int) -> Optional[User]:
+    return db.get(User, user_id)
 
-def create_user(data: dict) -> dict:
-    data["id"] = users_db.id_counter
-    users_db.users_db.append(data)
-    users_db.id_counter += 1
-    return data
 
-def update_user(user_id: int, data: dict) -> Optional[dict]:
-    user = find_user(user_id)
-    if user:
-        user.update(data)
+def find_user_by_email(db: Session, email: str) -> Optional[User]:
+    statement = select(User).where(User.email == email)
+    return db.scalar(statement)
+
+
+def create_user(db: Session, data: dict) -> User:
+    user = User(**data)
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("El correo electrónico ya está registrado") from exc
+    db.refresh(user)
     return user
 
-def delete_user(user_id: int) -> bool:
-    user = find_user(user_id)
-    if user:
-        users_db.users_db.remove(user)
-        return True
-    return False
+
+def update_user(db: Session, user: User, data: dict) -> User:
+    for field, value in data.items():
+        setattr(user, field, value)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("El correo electrónico ya está registrado") from exc
+    db.refresh(user)
+    return user
+
+
+def delete_user(db: Session, user: User) -> None:
+    db.delete(user)
+    db.commit()

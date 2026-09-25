@@ -1,5 +1,17 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
+
+from app.database.connection import Base, engine
+from app.models import user_model
 from app.routes import user_routes
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
 
 app = FastAPI(
     title="device_systems API",
@@ -8,7 +20,8 @@ app = FastAPI(
     contact={
         "name": "Maileth Begambre",
         "email": "tu-email@ejemplo.com"
-    }
+    },
+    lifespan=lifespan,
 )
 
 # Middleware para cabeceras

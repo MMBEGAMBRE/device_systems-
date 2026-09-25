@@ -140,3 +140,113 @@ La documentación interactiva está disponible en `http://127.0.0.1:8000/docs` y
 
 ### 11. Correo duplicado (400)
 ![Correo duplicado Guía 8](img/guia8_duplicate.png)
+
+---
+
+# Evolución Guía 9 - Persistencia con SQLAlchemy
+
+La Guía 9 conserva las funcionalidades y evidencias históricas de las Guías 7 y 8. Las capturas anteriores documentan esas versiones; las evidencias nuevas de esta sección deben tomarse sobre la versión con SQLAlchemy. El cambio principal es que los usuarios dejan de guardarse en una lista temporal y pasan a persistirse en SQLite mediante SQLAlchemy.
+
+## Estructura de la Guía 9
+
+```text
+app/
+├── database/       # Engine, Base y configuración de sesiones
+├── dependencies/  # Sesiones de base de datos reutilizables
+├── models/        # Modelo ORM de SQLAlchemy
+├── routes/        # Endpoints HTTP
+├── schemas/       # Validación y respuesta con Pydantic
+└── services/      # Consultas y operaciones CRUD
+```
+
+## Instalación y ejecución
+
+Instala las dependencias declaradas en `requirements.txt` y ejecuta:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --reload
+```
+
+Se recomienda usar un entorno virtual local. En PowerShell puedes crearlo y activarlo así:
+
+```powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+La aplicación crea `device_systems.db` y la tabla `users` al iniciar. La base SQLite está en la raíz del proyecto y no se versiona en Git.
+
+## SQLAlchemy y Pydantic
+
+El modelo `User` en `app/models/user_model.py` representa la tabla física: define los tipos SQL, `created_at`, campos obligatorios, email único y una restricción para limitar `role` a `admin`, `support` o `user`.
+
+Los schemas de `app/schemas/user_schema.py` no son tablas. Pydantic valida los datos que entran a la API y estructura las respuestas. `UserResponse` usa `from_attributes=True` para construir la respuesta a partir de una instancia ORM.
+
+`get_db()` crea una sesión por petición y la cierra al terminar. Las rutas la reciben mediante `Depends()` y delegan las consultas a `app/services/user_service.py`. La lista y búsqueda permiten filtros por rol/estado y orden con `sort_by=name` o `sort_by=created_at`.
+
+## Respuestas principales
+
+| Situación | Código |
+| --- | --- |
+| Consulta correcta | 200 |
+| Usuario creado | 201 |
+| Actualización completa o parcial | 200 |
+| Usuario eliminado | 204 |
+| Usuario inexistente | 404 |
+| Email duplicado | 400 |
+| Datos rechazados por Pydantic | 422 |
+
+## Evidencias de la Guía 9
+
+Las tres primeras capturas fueron tomadas manualmente y se conservaron con sus nombres originales. Las capturas restantes muestran ejecuciones realizadas en Swagger UI y documentación servida por la API.
+
+### Estructura del proyecto
+![Estructura de la Guía 9](img/guia9_base_estructura.jpeg)
+
+### Base de datos SQLite
+![Base de datos de la Guía 9](img/guia9_base_datos.jpeg)
+
+### Swagger UI
+![Swagger UI de la Guía 9](img/guia9_swagger.jpeg)
+
+### ReDoc
+![ReDoc de la Guía 9](img/guia9_redoc.png)
+
+### POST exitoso (201)
+![POST exitoso de la Guía 9](img/guia9_post.png)
+
+### GET de lista (200)
+![Listado de usuarios de la Guía 9](img/guia9_get_list.png)
+
+### GET con filtro por rol (200)
+![Filtro de usuarios de la Guía 9](img/guia9_get_filter.png)
+
+### GET por ID (200)
+![Consulta por ID de la Guía 9](img/guia9_get_id.png)
+
+### PUT completo (200)
+![PUT de la Guía 9](img/guia9_put.png)
+
+### PATCH parcial (200)
+![PATCH de la Guía 9](img/guia9_patch.png)
+
+### DELETE (204)
+![DELETE de la Guía 9](img/guia9_delete.png)
+
+### Consulta del usuario eliminado (404)
+![Usuario eliminado no encontrado](img/guia9_deleted_404.png)
+
+### Usuario inexistente (404)
+![Error 404 de la Guía 9](img/guia9_get_404.png)
+
+### Email duplicado (400)
+![Error por email duplicado de la Guía 9](img/guia9_duplicate.png)
+
+### Validación Pydantic (422)
+![Error de validación de la Guía 9](img/guia9_validation_422.png)
+
+## Reflexión sobre persistencia
+
+Con SQLAlchemy los datos sobreviven al reinicio de la API porque se guardan en SQLite. Separar el modelo ORM de los schemas Pydantic permite distinguir la estructura de la base de datos de los datos que acepta y entrega la API. Las constraints de la base de datos refuerzan las validaciones y protegen la integridad incluso si una petición concurrente intenta registrar un email repetido.
