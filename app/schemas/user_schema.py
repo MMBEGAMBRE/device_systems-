@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional
 from enum import Enum
@@ -29,5 +31,6 @@ class UserPatch(BaseModel):
 
 class UserResponse(UserBase):
     id: int
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
