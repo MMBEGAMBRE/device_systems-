@@ -1,5 +1,7 @@
 # Proyecto device_systems - API REST de Usuarios
 
+🎥 [Video explicativo del proyecto](https://youtu.be/v7xjLOluw44)
+
 Este proyecto es una API REST funcional construida con **FastAPI** para administrar los usuarios del sistema `device_systems`. Implementa validaciones con Pydantic v2, manejo de errores HTTP y documentación automática.
 
 ## Tecnologías utilizadas
@@ -535,8 +537,12 @@ Al superar el límite, la API responde `429 Too Many Requests`.
 
 Con el servidor corriendo (`python -m uvicorn app.main:app --reload`) y Swagger en `/docs`, recuerda siempre pulsar **Execute** y bajar el scroll hasta **"Server response"** para capturar el `Code` y el `Response body` — no basta con el formulario.
 
-1. `guia11_estructura.png`: 
+1. `guia11_estructura.png`:
+(img/11_estructura_proyecto.jpeg)
+
 2. `guia11_migracion.png`:
+(img/11_migracion Alembic aplicada.jpeg)
+
 3. `guia11_register.png`: `POST /auth/register` 
 4. `guia11_register_weak.png`: 
 5. `guia11_register_duplicate.png`: 
