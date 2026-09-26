@@ -1,11 +1,13 @@
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
+from app.auth.security import limiter
 from app.schemas.user_schema import UserCreate, UserResponse, UserRole, UserUpdate, UserPatch
 from app.services import user_service
 from app.dependencies.database_dependency import get_db
+from app.dependencies.auth_dependency import get_current_active_user
 from app.dependencies.user_dependencies import get_user_or_404
 from app.schemas.loan_schema import LoanDetailResponse
 from app.services import loan_service
@@ -13,18 +15,21 @@ from app.services import loan_service
 router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("", response_model=list[UserResponse], summary="Listar usuarios", response_description="Lista de usuarios registrada")
+@limiter.limit("30/minute")
 def get_users(
+    request: Request,
     role: Optional[UserRole] = None,
     is_active: Optional[bool] = None,
     sort_by: Literal["name", "created_at"] = "name",
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_active_user),
 ):
-    """Obtiene todos los usuarios con filtros opcionales."""
+    """Obtiene todos los usuarios con filtros opcionales. Requiere autenticación."""
     return user_service.list_users(db, role, is_active, sort_by)
 
 @router.get("/{user_id}", response_model=UserResponse, summary="Consultar usuario", response_description="Usuario encontrado")
-def get_user(user=Depends(get_user_or_404)):
-    """Busca un usuario por ID usando una dependencia inyectada."""
+def get_user(user=Depends(get_user_or_404), current_user=Depends(get_current_active_user)):
+    """Busca un usuario por ID usando una dependencia inyectada. Requiere autenticación."""
     return user
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Registrar usuario", response_description="Usuario creado correctamente")

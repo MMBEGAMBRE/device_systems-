@@ -3,6 +3,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from app.dependencies.auth_dependency import require_admin, require_staff
 from app.dependencies.database_dependency import get_db
 from app.models.device_model import Device
 from app.schemas.device_schema import DeviceCreate, DevicePatch, DeviceResponse, DeviceType, DeviceUpdate
@@ -67,7 +68,7 @@ def get_device(device: Device = Depends(get_device_or_404)):
     summary="Registrar dispositivo",
     response_description="Dispositivo creado correctamente",
 )
-def create_device(device_in: DeviceCreate, db: Session = Depends(get_db)):
+def create_device(device_in: DeviceCreate, db: Session = Depends(get_db), current_user=Depends(require_staff)):
     if device_service.find_device_by_serial(db, device_in.serial_number):
         raise HTTPException(status_code=400, detail="El número de serie ya está registrado")
     try:
@@ -86,6 +87,7 @@ def update_device(
     device_in: DeviceUpdate,
     device: Device = Depends(get_device_or_404),
     db: Session = Depends(get_db),
+    current_user=Depends(require_staff),
 ):
     duplicate = device_service.find_device_by_serial(db, device_in.serial_number)
     if duplicate and duplicate.id != device.id:
@@ -130,7 +132,11 @@ def patch_device(
     summary="Eliminar dispositivo",
     response_description="Dispositivo eliminado correctamente",
 )
-def delete_device(device: Device = Depends(get_device_or_404), db: Session = Depends(get_db)):
+def delete_device(
+    device: Device = Depends(get_device_or_404),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
     try:
         device_service.delete_device(db, device)
     except device_service.DeviceHasLoansError as exc:

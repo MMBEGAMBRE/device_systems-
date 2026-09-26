@@ -423,3 +423,134 @@ Conserva las evidencias de las Guías 7, 8 y 9. Las siguientes corresponden a la
 ## Reflexión sobre relaciones y migraciones
 
 Alembic permite revisar y aplicar cambios del esquema de manera repetible sin recrear la base ni perder los datos existentes. Las relaciones y claves foráneas conectan usuarios, dispositivos y préstamos, mientras que los joins permiten responder consultas completas en una sola API. La disponibilidad coordinada con el estado del préstamo evita entregar dos veces el mismo equipo y conservar un historial verificable.
+
+---
+
+# Evolución Guía 11 - Seguridad, autenticación y rate limiting
+
+La Guía 11 conserva todo lo construido en las Guías 7 a 10 (usuarios, dispositivos, préstamos, relaciones y migraciones) y agrega una capa de seguridad: autenticación con OAuth2 y JWT, hash de contraseñas, autorización por roles, middleware personalizado, CORS y rate limiting.
+
+## Estructura añadida
+
+```text
+app/
+├── auth/
+│   ├── auth_routes.py     # POST /auth/register, /auth/login, GET /auth/me
+│   ├── auth_service.py    # Registro y autenticación contra la base de datos
+│   └── security.py        # Hash de contraseñas, JWT y el limiter de slowapi
+├── middlewares/
+│   └── request_middleware.py  # X-Process-Time, X-Request-ID, X-App-Name
+├── dependencies/
+│   └── auth_dependency.py # get_current_user, get_current_active_user, require_roles
+└── schemas/
+    └── auth_schema.py     # UserRegister, UserLogin, Token, TokenData
+```
+
+## Variables de entorno
+
+Se agregó `.env` (no versionado) y `.env.example` (sí versionado) con:
+
+```
+SECRET_KEY=...
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+DATABASE_URL=sqlite:///./device_systems.db
+```
+
+Antes de ejecutar el proyecto por primera vez, copia `.env.example` a `.env` y define tu propio `SECRET_KEY`.
+
+## Migración de autenticación
+
+El modelo `User` se amplió con `hashed_password` (obligatorio, nunca expuesto en los response models). La migración se generó con:
+
+```powershell
+alembic revision --autogenerate -m "add authentication fields to users"
+alembic upgrade head
+```
+
+## Endpoints de autenticación (`/auth`)
+
+| Método | Ruta | Descripción | Código de éxito |
+| --- | --- | --- | --- |
+| POST | `/auth/register` | Registra un usuario validando contraseña segura y correo único | 201 |
+| POST | `/auth/login` | Autentica con `username`/`password` (form OAuth2) y retorna un JWT | 200 |
+| GET | `/auth/me` | Retorna los datos del usuario dueño del token (`Authorization: Bearer <token>`) | 200 |
+
+La contraseña debe tener mínimo 8 caracteres, al menos una mayúscula, una minúscula, un número y no contener espacios. Se valida con `field_validator` de Pydantic v2 en `app/schemas/auth_schema.py`.
+
+## Protección de rutas por rol
+
+| Ruta | Protección requerida |
+| --- | --- |
+| `GET /users` | Usuario autenticado |
+| `GET /users/{user_id}` | Usuario autenticado |
+| `POST /devices` | Admin o support |
+| `PUT /devices/{device_id}` | Admin o support |
+| `DELETE /devices/{device_id}` | Admin |
+| `POST /loans` | Usuario autenticado |
+| `PATCH /loans/{loan_id}/return` | Admin o support |
+| `GET /loans/details` | Admin o support |
+
+Sin token válido la API responde `401 Unauthorized`; con token válido pero rol insuficiente responde `403 Forbidden`. Las dependencias `get_current_active_user`, `require_staff` (admin/support) y `require_admin` están en `app/dependencies/auth_dependency.py`.
+
+## CORS
+
+Configurado en `app/main.py` con `CORSMiddleware`, permitiendo únicamente `http://localhost:5173` y `http://localhost:3000` (orígenes típicos de un frontend en desarrollo), `allow_credentials=True`, `allow_methods=["*"]` y `allow_headers=["*"]`.
+
+**Por qué no usar `allow_origins=["*"]` en producción cuando hay credenciales:** la especificación CORS prohíbe combinar un comodín (`*`) con `allow_credentials=True` — el navegador rechaza directamente esa combinación porque, si se permitiera, cualquier sitio web podría hacer peticiones autenticadas (con cookies o cabeceras de sesión) a la API en nombre del usuario sin su consentimiento. Por eso se listan explícitamente los dominios del frontend autorizado.
+
+## Middleware personalizado
+
+`app/middlewares/request_middleware.py` agrega a cada respuesta:
+- `X-App-Name: device_systems`
+- `X-API-Version: 4.0`
+- `X-Process-Time`: tiempo de procesamiento en segundos
+- `X-Request-ID`: identificador único de la petición (se reutiliza si el cliente ya envió uno)
+
+También registra en consola el método, la ruta y el código de estado de cada petición.
+
+## Rate limiting
+
+Implementado con `slowapi`, usando la IP del cliente como clave:
+
+| Endpoint | Límite |
+| --- | --- |
+| `POST /auth/login` | 5 por minuto |
+| `POST /auth/register` | 3 por minuto |
+| `GET /users` | 30 por minuto |
+| `POST /loans` | 10 por minuto |
+
+Al superar el límite, la API responde `429 Too Many Requests`.
+
+## Códigos HTTP nuevos
+
+| Caso | Código |
+| --- | --- |
+| Registro o login exitoso | 200/201 |
+| Token ausente o inválido | 401 |
+| Rol sin permisos suficientes | 403 |
+| Demasiadas peticiones | 429 |
+
+## Evidencias de la Guía 11 por tomar
+
+Con el servidor corriendo (`python -m uvicorn app.main:app --reload`) y Swagger en `/docs`, recuerda siempre pulsar **Execute** y bajar el scroll hasta **"Server response"** para capturar el `Code` y el `Response body` — no basta con el formulario.
+
+1. `guia11_estructura.png`: 
+2. `guia11_migracion.png`:
+3. `guia11_register.png`: `POST /auth/register` 
+4. `guia11_register_weak.png`: 
+5. `guia11_register_duplicate.png`: 
+6. `guia11_login.png`: `POST /auth/login`
+7. `guia11_login_wrong.png`: `POST /auth/login`
+8. `guia11_me.png`: `GET /auth/me` `401`.
+10. `guia11_forbidden.png`:.
+11. `guia11_device_admin.png`: .
+12. `guia11_swagger_oauth2.png`: 
+13. `guia11_headers.png`: 
+14. `guia11_rate_limit.png`:.
+
+
+
+## Reflexión sobre seguridad en APIs REST
+
+Separar la autenticación (quién eres) de la autorización (qué puedes hacer) permite proteger cada endpoint según el riesgo real de la operación: cualquier usuario autenticado puede consultar, pero solo un rol de confianza puede modificar el inventario o cerrar préstamos. El hash de contraseñas con `passlib`/`bcrypt` asegura que ni siquiera con acceso a la base de datos se puedan recuperar las contraseñas originales. El middleware y el rate limiting añaden trazabilidad y una primera defensa contra abuso, mientras que CORS delimita qué frontends pueden consumir la API de forma autenticada.
