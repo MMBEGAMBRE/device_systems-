@@ -57,4 +57,8 @@ def update_user(db: Session, user: User, data: dict) -> User:
 
 def delete_user(db: Session, user: User) -> None:
     db.delete(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("No se puede eliminar el usuario porque tiene préstamos registrados") from exc

@@ -7,6 +7,8 @@ from app.schemas.user_schema import UserCreate, UserResponse, UserRole, UserUpda
 from app.services import user_service
 from app.dependencies.database_dependency import get_db
 from app.dependencies.user_dependencies import get_user_or_404
+from app.schemas.loan_schema import LoanDetailResponse
+from app.services import loan_service
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -74,5 +76,21 @@ def patch_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Eliminar usuario", response_description="Usuario eliminado correctamente")
 def delete_user(existing_user=Depends(get_user_or_404), db: Session = Depends(get_db)):
     """Elimina definitivamente un usuario."""
-    user_service.delete_user(db, existing_user)
+    try:
+        user_service.delete_user(db, existing_user)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{user_id}/loans",
+    response_model=list[LoanDetailResponse],
+    summary="Consultar préstamos del usuario",
+    response_description="Historial de préstamos con información de los dispositivos",
+)
+def get_user_loans(
+    existing_user=Depends(get_user_or_404),
+    db: Session = Depends(get_db),
+):
+    return loan_service.list_user_loans(db, existing_user.id)

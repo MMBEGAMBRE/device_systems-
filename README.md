@@ -23,7 +23,7 @@ Este proyecto es una API REST funcional construida con **FastAPI** para administ
 | GET | `/users/{id}` | Consultar un usuario por su ID único |
 | POST | `/users` | Registrar un nuevo usuario |
 
-## Evidencias de Pruebas
+## Evidencias de la Guía 7
 
 ### 1. Documentación Swagger UI
 ![Swagger UI](img/imagen1.jpeg)
@@ -250,3 +250,176 @@ Las tres primeras capturas fueron tomadas manualmente y se conservaron con sus n
 ## Reflexión sobre persistencia
 
 Con SQLAlchemy los datos sobreviven al reinicio de la API porque se guardan en SQLite. Separar el modelo ORM de los schemas Pydantic permite distinguir la estructura de la base de datos de los datos que acepta y entrega la API. Las constraints de la base de datos refuerzan las validaciones y protegen la integridad incluso si una petición concurrente intenta registrar un email repetido.
+
+---
+
+# Evolución Guía 10 - Alembic, relaciones y consultas
+
+La Guía 10 conserva usuarios de las actividades anteriores y agrega dispositivos y préstamos. Un `Loan` referencia un `User` y un `Device`; al prestar un dispositivo se marca no disponible y al devolverlo vuelve a estar disponible. Alembic controla los cambios de esquema.
+
+## Estructura añadida
+
+```text
+alembic/
+└── versions/
+app/
+├── database/       # Engine y Base
+├── dependencies/  # Sesión SQLAlchemy por petición
+├── models/        # User, Device y Loan relacionados
+├── routes/        # Users, Devices y Loans
+├── schemas/       # Validación Pydantic v2
+└── services/      # CRUD, reglas de préstamos y consultas con joins
+```
+
+## Instalar, migrar y ejecutar
+
+Activa el entorno virtual e instala `requirements.txt`:
+
+```powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+Si ya tienes la base de la Guía 9 con `users` y todavía no tiene historial Alembic, registra esa tabla existente una sola vez y aplica las migraciones nuevas:
+
+```powershell
+alembic stamp aa55df750f10
+alembic upgrade head
+alembic history
+python -m uvicorn app.main:app --reload
+```
+
+`stamp` solo registra el baseline existente; no crea ni borra tablas o filas. En una instalación limpia, usa directamente `alembic upgrade head`: el baseline crea `users` y la siguiente revisión crea `devices` y `loans`.
+
+Para futuras modificaciones del modelo, genera y aplica una revisión:
+
+```powershell
+alembic revision --autogenerate -m "describe el cambio"
+alembic upgrade head
+```
+
+La revisión `aa55df750f10` conserva el esquema User de Guía 9 y lo crea únicamente si falta. La revisión `8e88a3c46e3c` crea las tablas de dispositivos y préstamos; está protegida para no duplicar tablas que ya existan.
+
+## Relaciones y validaciones
+
+- Un usuario tiene muchos préstamos (`User.loans`).
+- Un dispositivo tiene muchos préstamos históricos (`Device.loans`).
+- Cada préstamo referencia un usuario y un dispositivo con claves foráneas.
+- Los números de serie son únicos; los tipos de equipo y estados tienen constraints y validación Pydantic.
+- No se presta un equipo no disponible ni se devuelve dos veces el mismo préstamo.
+- Los registros históricos impiden borrar usuarios o dispositivos relacionados.
+
+El modelo SQLAlchemy define tablas, tipos, relaciones y constraints. Los schemas Pydantic validan los datos de entrada y determinan el formato de respuesta, incluidos los objetos anidados del detalle de préstamo.
+
+## Endpoints de la Guía 10
+
+| Método | Ruta | Función |
+| --- | --- | --- |
+| GET, POST, PUT, PATCH, DELETE | `/users` y `/users/{user_id}` | CRUD de usuarios conservado |
+| GET | `/users/{user_id}/loans` | Historial del usuario con dispositivos relacionados |
+| GET, POST | `/devices` | Listar/filtrar y registrar dispositivos |
+| GET, PUT, PATCH, DELETE | `/devices/{device_id}` | Consultar y administrar dispositivos |
+| GET | `/devices/{device_id}/loans` | Historial del dispositivo |
+| GET | `/loans` | Listar y filtrar préstamos con usuario y dispositivo |
+| GET | `/loans/details` | Consulta relacional detallada |
+| GET | `/loans/{loan_id}` | Consultar un préstamo detallado |
+| POST | `/loans` | Crear préstamo y actualizar disponibilidad |
+| PATCH | `/loans/{loan_id}/return` | Registrar devolución y liberar dispositivo |
+
+Filtros de dispositivos: `device_type`, `is_available`, `brand`, `search` y `sort_by`. Filtros de préstamos: `status`, `user_email`, `device_type`, `user_id`, `device_id`, `from_date` y `to_date`. Las consultas de préstamos usan joins entre las tres tablas.
+
+## Códigos HTTP
+
+| Caso | Código |
+| --- | --- |
+| Crear usuario, dispositivo o préstamo | 201 |
+| Consultar, actualizar o devolver | 200 |
+| Eliminar dispositivo sin historial | 204 |
+| Usuario, dispositivo o préstamo inexistente | 404 |
+| Email o serial duplicado | 400 |
+| Dispositivo no disponible, préstamo ya devuelto o historial que impide borrar | 409 |
+| Entrada o filtro inválido | 422 |
+
+La documentación OpenAPI está disponible en `/docs` y `/redoc`. Las respuestas HTTP conservan `X-App-Name` y `X-API-Version: 3.0`.
+
+## Evidencias de la Guía 10
+
+Conserva las evidencias de las Guías 7, 8 y 9. Las siguientes corresponden a la versión con Alembic, relaciones entre `users`, `devices` y `loans`, y consultas con joins.
+
+### Migraciones con Alembic
+
+#### Estructura de Alembic inicializada
+![Alembic inicializado](img/guia10_alembic_init.jpeg)
+
+#### Migración generada (`alembic revision --autogenerate`)
+![Migración generada](img/guia10_revision.jpeg)
+
+#### Migración aplicada (`alembic upgrade head`)
+![Migración aplicada](img/guia10_upgrade.jpeg)
+
+### Estructura de las tablas generadas
+
+#### Tabla `devices`
+![Estructura de devices](img/guia10_tablas_devices.jpeg)
+
+#### Tabla `loans` (con foreign keys hacia `users` y `devices`)
+![Estructura de loans](img/guia10_tablas_loans.jpeg)
+
+#### Tabla `users`
+![Estructura de users](img/guia10_tablas_users.jpeg)
+
+### Documentación de la API
+
+#### Swagger UI con los grupos Users, Devices y Loans
+![Swagger UI Guía 10](img/guia10_swagger.jpeg)
+
+#### ReDoc
+![ReDoc Guía 10](img/guia10_redoc.png)
+
+### Pruebas funcionales
+
+#### Registro de usuario (`POST /users`)
+![POST usuario](img/guia10_user_post.png)
+
+#### Registro de dispositivo (`POST /devices`)
+![POST dispositivo](img/guia10_device_post.png)
+
+#### Registro de préstamo (`POST /loans`) con usuario y dispositivo anidados
+![POST préstamo](img/guia10_loan_post.png)
+
+#### Intento de préstamo con dispositivo no disponible (`409`)
+![Préstamo no disponible](img/guia10_loan_unavailable.png)
+
+#### Consulta con joins (`GET /loans/details`)
+![Consulta con joins](img/guia10_loan_details.png)
+
+#### Filtros aplicados (`GET /loans?status=active`)
+![Filtros de préstamos](img/guia10_loan_filters.png)
+
+#### Historial de préstamos del usuario (`GET /users/{user_id}/loans`)
+![Historial del usuario](img/guia10_user_history.png)
+
+#### Historial de préstamos del dispositivo (`GET /devices/{device_id}/loans`)
+![Historial del dispositivo](img/guia10_device_history.png)
+
+#### Devolución de préstamo (`PATCH /loans/{loan_id}/return`)
+![Devolución de préstamo](img/guia10_loan_return.png)
+
+#### Dispositivo disponible después de la devolución
+![Dispositivo disponible](img/guia10_device_available.png)
+
+### Errores controlados
+
+#### Correo duplicado (`400`)
+![Error 400](img/guia10_error_400.jpeg)
+
+#### Recurso no encontrado (`404`)
+![Error 404](img/guia10_error_404.jpeg)
+
+#### Préstamo ya devuelto (`409`)
+![Error 409](img/guia10_error_409.jpeg)
+
+## Reflexión sobre relaciones y migraciones
+
+Alembic permite revisar y aplicar cambios del esquema de manera repetible sin recrear la base ni perder los datos existentes. Las relaciones y claves foráneas conectan usuarios, dispositivos y préstamos, mientras que los joins permiten responder consultas completas en una sola API. La disponibilidad coordinada con el estado del préstamo evita entregar dos veces el mismo equipo y conservar un historial verificable.
